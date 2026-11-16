@@ -32,6 +32,14 @@ STATUS_COLORS = {
 SEGMENT_COLORS = dict(zip(SEGMENT_ORDER, SEQ[2:]))  # ordinal → one hue, light to dark
 DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
+# ── Version compatibility ────────────────────────────────────────────────────
+# Rounded bar ends need plotly >= 5.19; older installs simply get square bars.
+try:
+    go.bar.Marker(cornerradius=4)
+    BAR_RADIUS = {"cornerradius": 4}
+except ValueError:
+    BAR_RADIUS = {}
+
 # ── Styling ──────────────────────────────────────────────────────────────────
 st.markdown(
     f"""
@@ -91,7 +99,10 @@ def style(fig: go.Figure, height: int = 340, legend: bool = False) -> go.Figure:
 
 
 def card(title: str, subtitle: str = ""):
-    box = st.container(border=True)
+    try:
+        box = st.container(border=True)  # streamlit >= 1.29
+    except TypeError:
+        box = st.container()
     box.markdown(f'<p class="card-title">{title}</p>' + (f'<p class="card-sub">{subtitle}</p>' if subtitle else ""),
                  unsafe_allow_html=True)
     return box
@@ -113,7 +124,7 @@ def hbar(data: pd.DataFrame, y: str, x: str, color=BLUE, height=360, hover_label
     data = data.sort_values(x)
     fig = go.Figure(go.Bar(
         x=data[x], y=data[y], orientation="h",
-        marker=dict(color=color, cornerradius=4),
+        marker=dict(color=color, **BAR_RADIUS),
         text=data[x].map("{:,}".format), textposition="outside",
         textfont=dict(color=INK_SOFT, size=11), cliponaxis=False,
         hovertemplate=f"<b>%{{y}}</b><br>{hover_label}: %{{x:,}}<extra></extra>",
@@ -192,7 +203,7 @@ tab_over, tab_content, tab_rhythm, tab_aud, tab_err, tab_data = st.tabs(
 # ── Overview ─────────────────────────────────────────────────────────────────
 with tab_over:
     box = card("Daily traffic", f"{lens} per day, with a 7-day rolling average")
-    log_y = box.toggle("Log scale", value=True, help="Keeps quiet days visible next to traffic spikes.")
+    log_y = (box.toggle if hasattr(box, "toggle") else box.checkbox)("Log scale", value=True, help="Keeps quiet days visible next to traffic spikes.")
     daily = focus.groupby("date").size().rename("requests").reset_index()
     if daily.empty:
         box.info("No data for this lens.")
@@ -275,7 +286,7 @@ with tab_rhythm:
         box = card("Hourly profile", "Share of requests by hour")
         hourly = focus.groupby("hour").size().reindex(range(24), fill_value=0)
         fig = go.Figure(go.Bar(
-            x=hourly.index, y=hourly.values, marker=dict(color=BLUE, cornerradius=4),
+            x=hourly.index, y=hourly.values, marker=dict(color=BLUE, **BAR_RADIUS),
             hovertemplate="%{x}:00 · %{y:,} requests<extra></extra>",
         ))
         style(fig, 300).update_xaxes(dtick=3, title="Hour (UTC)")
@@ -284,7 +295,7 @@ with tab_rhythm:
         box = card("Monthly bandwidth", "All requests, megabytes served")
         mbw = (df.groupby("month")["size"].sum() / 1e6).rename("mb").reset_index()
         fig = go.Figure(go.Bar(
-            x=mbw["month"], y=mbw["mb"], marker=dict(color=LILAC, cornerradius=4),
+            x=mbw["month"], y=mbw["mb"], marker=dict(color=LILAC, **BAR_RADIUS),
             hovertemplate="%{x}<br>%{y:,.1f} MB<extra></extra>",
         ))
         style(fig, 300).update_xaxes(type="category", tickangle=-45)
@@ -298,7 +309,7 @@ with tab_aud:
         counts = df_humans.groupby("ip").size()
         seg = counts.map(segment).value_counts().reindex(SEGMENT_ORDER, fill_value=0)
         fig = go.Figure(go.Bar(
-            x=seg.index, y=seg.values, marker=dict(color=[SEGMENT_COLORS[s] for s in seg.index], cornerradius=4),
+            x=seg.index, y=seg.values, marker=dict(color=[SEGMENT_COLORS[s] for s in seg.index], **BAR_RADIUS),
             text=[f"{v:,}" for v in seg.values], textposition="outside", textfont=dict(color=INK_SOFT),
             cliponaxis=False, hovertemplate="<b>%{x}</b><br>%{y:,} visitors<extra></extra>",
         ))
@@ -345,7 +356,7 @@ with tab_err:
             top_err["label"] = top_err["url"].str.slice(0, 40) + "  ·  " + top_err["status"].astype(str)
             fig = go.Figure(go.Bar(
                 x=top_err["count"], y=top_err["label"], orientation="h",
-                marker=dict(color=[ROSE if s >= 500 else AMBER for s in top_err["status"]], cornerradius=4),
+                marker=dict(color=[ROSE if s >= 500 else AMBER for s in top_err["status"]], **BAR_RADIUS),
                 text=top_err["count"].map("{:,}".format), textposition="outside",
                 textfont=dict(color=INK_SOFT), cliponaxis=False,
                 hovertemplate="<b>%{y}</b><br>%{x:,} occurrences<extra></extra>",
