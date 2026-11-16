@@ -59,13 +59,30 @@ st.markdown(
     }}
     .hero h1 {{ margin: 0; font-size: 2.3rem; }}
     .hero p {{ margin: 6px 0 0; color: {INK_SOFT}; font-size: 0.98rem; }}
-    .kpi {{
-        border-radius: 18px; padding: 18px 20px; border: 1px solid rgba(46,42,59,0.05);
-        height: 132px; box-sizing: border-box;
+    .kpi-grid {{
+        display: grid; gap: 14px; margin-bottom: 18px;
+        grid-template-columns: repeat(5, minmax(0, 1fr));   /* five equal, symmetrical cards */
+        grid-auto-rows: 1fr;                                 /* one shared height that fits the tallest text */
     }}
-    .kpi .label {{ font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: {INK_SOFT}; font-weight: 600; }}
-    .kpi .value {{ font-family: 'Fraunces', serif; font-size: 2.0rem; color: {INK}; line-height: 1.2; margin-top: 4px; }}
-    .kpi .sub {{ font-size: 0.82rem; color: {INK_MUTED}; margin-top: 2px; }}
+    .kpi {{
+        border-radius: 18px; padding: 16px 16px; border: 1px solid rgba(46,42,59,0.06);
+        display: flex; flex-direction: column; justify-content: center; min-width: 0;
+    }}
+    .kpi .label {{ font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: {INK_SOFT}; font-weight: 600;
+                   word-break: normal; overflow-wrap: normal; }}
+    .kpi .value {{ font-family: 'Fraunces', serif; font-size: clamp(1.4rem, 1.9vw, 2rem); color: {INK};
+                   line-height: 1.2; margin-top: 4px; white-space: nowrap; }}
+    .kpi .sub {{ font-size: 0.8rem; color: {INK_MUTED}; margin-top: 2px; }}
+    .kpi-wrap {{ container-type: inline-size; }}
+    /* Too narrow for five cards: stack them as equal full-width rows, label left, number right */
+    @container (max-width: 820px) {{
+        .kpi-grid {{ grid-template-columns: 1fr; gap: 10px; }}
+        .kpi {{ display: grid; grid-template-columns: 1fr auto; grid-template-areas: "label value" "sub value";
+                align-items: center; column-gap: 12px; padding: 12px 18px; }}
+        .kpi .label {{ grid-area: label; }}
+        .kpi .sub {{ grid-area: sub; }}
+        .kpi .value {{ grid-area: value; margin: 0; font-size: 1.6rem; }}
+    }}
     .card-title {{ font-family: 'Fraunces', serif; font-size: 1.15rem; color: {INK}; margin: 0 0 2px; }}
     .card-sub {{ font-size: 0.85rem; color: {INK_MUTED}; margin: 0 0 6px; }}
     div[data-testid="stVerticalBlockBorderWrapper"] {{
@@ -77,10 +94,11 @@ st.markdown(
     }}
     .stTabs [aria-selected="true"] {{ background: {TINTS['lavender']}; color: {INK}; font-weight: 600; }}
     .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {{ display: none; }}
-    section[data-testid="stSidebar"] {{ background: #E9E3F7; border-right: 1px solid #D9D0F0; }}
+    section[data-testid="stSidebar"] {{ background: #D3C8EE; border-right: 1px solid #BDAFE3; }}
+    section[data-testid="stSidebar"] hr {{ border-color: #C2B5E6; }}
     section[data-testid="stSidebar"] h3 {{ color: {INK}; }}
     section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
-    section[data-testid="stSidebar"] div[data-baseweb="input"] {{ background: #FFFFFF; border-color: #D9D0F0; }}
+    section[data-testid="stSidebar"] div[data-baseweb="input"] {{ background: #FFFFFF; border-color: #C2B5E6; }}
     /* equal-height cards: columns in a row stretch, and the card fills its column */
     div[data-testid="stHorizontalBlock"] {{ align-items: stretch; }}
     div[data-testid="stColumn"] > div, div[data-testid="column"] > div {{ height: 100%; }}
@@ -124,12 +142,14 @@ def show(box, fig):
     box.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
-def kpi(col, label: str, value: str, sub: str, tint: str):
-    col.markdown(
+def kpi_row(items):
+    """All KPI cards in one CSS grid, so every card is the same size and grows to fit its text."""
+    cards = "".join(
         f'<div class="kpi" style="background:{TINTS[tint]}"><div class="label">{label}</div>'
-        f'<div class="value">{value}</div><div class="sub">{sub}</div></div>',
-        unsafe_allow_html=True,
+        f'<div class="value">{value}</div><div class="sub">{sub}</div></div>'
+        for label, value, sub, tint in items
     )
+    st.markdown(f'<div class="kpi-wrap"><div class="kpi-grid">{cards}</div></div>', unsafe_allow_html=True)
 
 
 def hbar(data: pd.DataFrame, y: str, x: str, color=BLUE, height=360, hover_label="Requests"):
@@ -199,14 +219,14 @@ st.markdown(
 )
 
 # ── KPIs ─────────────────────────────────────────────────────────────────────
-c1, c2, c3, c4, c5 = st.columns(5)
-kpi(c1, "Total requests", f"{len(df):,}", f"{len(df_humans):,} human views", "lavender")
-kpi(c2, "Unique visitors", f"{df['ip'].nunique():,}", "distinct IP addresses", "sky")
 bw = df["size"].sum()
-kpi(c3, "Bandwidth", f"{bw/1e9:.2f} GB" if bw >= 1e8 else f"{bw/1e6:.1f} MB", "bytes served", "mint")
-kpi(c4, "Error rate", f"{(df['status'] >= 400).mean():.1%}", "status ≥ 400", "blush")
-kpi(c5, "Bot traffic", f"{df['is_bot'].mean():.1%}", f"{df['is_static'].mean():.0%} static assets", "butter")
-st.write("")
+kpi_row([
+    ("Total requests", f"{len(df):,}", f"{len(df_humans):,} human views", "lavender"),
+    ("Unique visitors", f"{df['ip'].nunique():,}", "distinct IP addresses", "sky"),
+    ("Bandwidth", f"{bw/1e9:.2f} GB" if bw >= 1e8 else f"{bw/1e6:.1f} MB", "bytes served", "mint"),
+    ("Error rate", f"{(df['status'] >= 400).mean():.1%}", "status ≥ 400", "blush"),
+    ("Bot traffic", f"{df['is_bot'].mean():.1%}", f"{df['is_static'].mean():.0%} static assets", "butter"),
+])
 
 tab_over, tab_content, tab_rhythm, tab_aud, tab_err, tab_data = st.tabs(
     ["Overview", "Content", "Rhythm", "Audience", "Errors", "Data"]
