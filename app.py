@@ -12,25 +12,37 @@ import streamlit as st
 
 from data_loader import SEGMENT_ORDER, STATUS_LABELS, load_data, segment, split_views
 
-st.set_page_config(page_title="WebLog Observatory", page_icon="🔭", layout="wide")
+st.set_page_config(page_title="WebLog Observatory", page_icon="⭐", layout="wide")
 
 # ── Palette ──────────────────────────────────────────────────────────────────
 # Pastel surfaces for cards/backgrounds; mid-tone pastels for data marks
 # (validated: lightness band, chroma floor, colour-blind separation).
 INK, INK_SOFT, INK_MUTED = "#2E2A3B", "#5F5A70", "#8F8AA0"
 GRID = "#ECE8F4"
-BLUE, ROSE, AMBER, SAGE, LILAC = "#6F86DB", "#D4789A", "#C9973F", "#33AA86", "#9B7ED4"
+# Chart colours are medium pastels from the same family as the KPI card tints,
+# so every chart reads as part of the app. Values are always labelled on the
+# marks or in a legend, so the soft colours never carry meaning alone.
+BLUE, ROSE, AMBER, SAGE, LILAC = "#9FC0EE", "#F0A9C0", "#F2CF8A", "#9AD6BC", "#B3A8EC"
+LINE_LAV, LINE_ROSE = "#8F83DA", "#E08AA8"  # slightly deeper so thin lines stay visible
 TINTS = {  # card backgrounds
     "lavender": "#EEEBFB", "blush": "#FBEAF0", "mint": "#E4F5EE",
     "butter": "#FBF3E2", "sky": "#E6EEFB",
 }
-SEQ = ["#F1EEFB", "#D9D3F5", "#B9B0EC", "#9289DE", "#6C66C7", "#4C47A3"]
+SEQ = ["#F5F2FC", "#E4DEF7", "#CFC6F1", "#B8ACE9", "#A194E0", "#8A7CD5"]
 STATUS_COLORS = {
     "1xx Info": LILAC, "2xx Success": SAGE, "3xx Redirect": BLUE,
     "4xx Client Err": AMBER, "5xx Server Err": ROSE,
 }
 SEGMENT_COLORS = dict(zip(SEGMENT_ORDER, SEQ[2:]))  # ordinal → one hue, light to dark
 DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+# ── Version compatibility ────────────────────────────────────────────────────
+# Rounded bar ends need plotly >= 5.19; older installs simply get square bars.
+try:
+    go.bar.Marker(cornerradius=4)
+    BAR_RADIUS = {"cornerradius": 4}
+except ValueError:
+    BAR_RADIUS = {}
 
 # ── Styling ──────────────────────────────────────────────────────────────────
 st.markdown(
@@ -49,7 +61,7 @@ st.markdown(
     .hero p {{ margin: 6px 0 0; color: {INK_SOFT}; font-size: 0.98rem; }}
     .kpi {{
         border-radius: 18px; padding: 18px 20px; border: 1px solid rgba(46,42,59,0.05);
-        min-height: 128px;
+        height: 132px; box-sizing: border-box;
     }}
     .kpi .label {{ font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: {INK_SOFT}; font-weight: 600; }}
     .kpi .value {{ font-family: 'Fraunces', serif; font-size: 2.0rem; color: {INK}; line-height: 1.2; margin-top: 4px; }}
@@ -65,7 +77,15 @@ st.markdown(
     }}
     .stTabs [aria-selected="true"] {{ background: {TINTS['lavender']}; color: {INK}; font-weight: 600; }}
     .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {{ display: none; }}
-    section[data-testid="stSidebar"] {{ background: #F6F3FB; border-right: 1px solid #EEE9F6; }}
+    section[data-testid="stSidebar"] {{ background: #E9E3F7; border-right: 1px solid #D9D0F0; }}
+    section[data-testid="stSidebar"] h3 {{ color: {INK}; }}
+    section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
+    section[data-testid="stSidebar"] div[data-baseweb="input"] {{ background: #FFFFFF; border-color: #D9D0F0; }}
+    /* equal-height cards: columns in a row stretch, and the card fills its column */
+    div[data-testid="stHorizontalBlock"] {{ align-items: stretch; }}
+    div[data-testid="stColumn"] > div, div[data-testid="column"] > div {{ height: 100%; }}
+    div[data-testid="stColumn"] div[data-testid="stVerticalBlockBorderWrapper"],
+    div[data-testid="column"] div[data-testid="stVerticalBlockBorderWrapper"] {{ height: 100%; }}
     footer, #MainMenu {{ visibility: hidden; }}
     </style>
     """,
@@ -91,7 +111,10 @@ def style(fig: go.Figure, height: int = 340, legend: bool = False) -> go.Figure:
 
 
 def card(title: str, subtitle: str = ""):
-    box = st.container(border=True)
+    try:
+        box = st.container(border=True)  # streamlit >= 1.29
+    except TypeError:
+        box = st.container()
     box.markdown(f'<p class="card-title">{title}</p>' + (f'<p class="card-sub">{subtitle}</p>' if subtitle else ""),
                  unsafe_allow_html=True)
     return box
@@ -113,7 +136,7 @@ def hbar(data: pd.DataFrame, y: str, x: str, color=BLUE, height=360, hover_label
     data = data.sort_values(x)
     fig = go.Figure(go.Bar(
         x=data[x], y=data[y], orientation="h",
-        marker=dict(color=color, cornerradius=4),
+        marker=dict(color=color, **BAR_RADIUS),
         text=data[x].map("{:,}".format), textposition="outside",
         textfont=dict(color=INK_SOFT, size=11), cliponaxis=False,
         hovertemplate=f"<b>%{{y}}</b><br>{hover_label}: %{{x:,}}<extra></extra>",
@@ -142,7 +165,7 @@ def donut(labels, values, colors, center: str):
 df_all = load_data()
 
 with st.sidebar:
-    st.markdown("### 🔭 Filters")
+    st.markdown("### ⭐ Filters")
     min_d, max_d = df_all["date"].min(), df_all["date"].max()
     picked = st.date_input("Date range", value=(min_d, max_d), min_value=min_d, max_value=max_d)
     start, end = (picked if isinstance(picked, (tuple, list)) and len(picked) == 2 else (min_d, max_d))
@@ -192,7 +215,7 @@ tab_over, tab_content, tab_rhythm, tab_aud, tab_err, tab_data = st.tabs(
 # ── Overview ─────────────────────────────────────────────────────────────────
 with tab_over:
     box = card("Daily traffic", f"{lens} per day, with a 7-day rolling average")
-    log_y = box.toggle("Log scale", value=True, help="Keeps quiet days visible next to traffic spikes.")
+    log_y = (box.toggle if hasattr(box, "toggle") else box.checkbox)("Log scale", value=True, help="Keeps quiet days visible next to traffic spikes.")
     daily = focus.groupby("date").size().rename("requests").reset_index()
     if daily.empty:
         box.info("No data for this lens.")
@@ -208,7 +231,7 @@ with tab_over:
         ))
         fig.add_trace(go.Scatter(
             x=daily["date"], y=daily["avg7"], name="7-day average", mode="lines",
-            line=dict(color=BLUE, width=2), hovertemplate="7-day avg: %{y:,.0f}<extra></extra>",
+            line=dict(color=LINE_LAV, width=2), hovertemplate="7-day avg: %{y:,.0f}<extra></extra>",
         ))
         style(fig, 340, legend=True).update_layout(hovermode="x unified")
         if log_y:
@@ -234,11 +257,11 @@ with tab_over:
 
 # ── Content ──────────────────────────────────────────────────────────────────
 with tab_content:
-    a, b = st.columns([3, 2])
+    a, b = st.columns(2)
     with a:
         box = card("Top 10 pages", lens)
         top = focus["url"].value_counts().head(10).rename_axis("url").reset_index(name="hits")
-        top["url"] = top["url"].str.slice(0, 48)
+        top["url"] = top["url"].map(lambda u: u if len(u) <= 36 else u[:35] + "…")
         show(box, hbar(top, "url", "hits", BLUE, 400))
     with b:
         box = card("Top sections", "First URL segment")
@@ -275,7 +298,7 @@ with tab_rhythm:
         box = card("Hourly profile", "Share of requests by hour")
         hourly = focus.groupby("hour").size().reindex(range(24), fill_value=0)
         fig = go.Figure(go.Bar(
-            x=hourly.index, y=hourly.values, marker=dict(color=BLUE, cornerradius=4),
+            x=hourly.index, y=hourly.values, marker=dict(color=BLUE, **BAR_RADIUS),
             hovertemplate="%{x}:00 · %{y:,} requests<extra></extra>",
         ))
         style(fig, 300).update_xaxes(dtick=3, title="Hour (UTC)")
@@ -284,7 +307,7 @@ with tab_rhythm:
         box = card("Monthly bandwidth", "All requests, megabytes served")
         mbw = (df.groupby("month")["size"].sum() / 1e6).rename("mb").reset_index()
         fig = go.Figure(go.Bar(
-            x=mbw["month"], y=mbw["mb"], marker=dict(color=LILAC, cornerradius=4),
+            x=mbw["month"], y=mbw["mb"], marker=dict(color=LILAC, **BAR_RADIUS),
             hovertemplate="%{x}<br>%{y:,.1f} MB<extra></extra>",
         ))
         style(fig, 300).update_xaxes(type="category", tickangle=-45)
@@ -292,21 +315,22 @@ with tab_rhythm:
 
 # ── Audience ─────────────────────────────────────────────────────────────────
 with tab_aud:
-    a, b = st.columns([2, 3])
+    a, b = st.columns(2)
     with a:
-        box = card("Engagement segments", "Human visitors by page requests per IP")
+        box = card("Engagement segments", "Human visitors by requests per IP · 1 · 2–4 · 5–15 · 16+")
         counts = df_humans.groupby("ip").size()
         seg = counts.map(segment).value_counts().reindex(SEGMENT_ORDER, fill_value=0)
         fig = go.Figure(go.Bar(
-            x=seg.index, y=seg.values, marker=dict(color=[SEGMENT_COLORS[s] for s in seg.index], cornerradius=4),
+            x=seg.index, y=seg.values, marker=dict(color=[SEGMENT_COLORS[s] for s in seg.index], **BAR_RADIUS),
             text=[f"{v:,}" for v in seg.values], textposition="outside", textfont=dict(color=INK_SOFT),
             cliponaxis=False, hovertemplate="<b>%{x}</b><br>%{y:,} visitors<extra></extra>",
         ))
-        style(fig, 340).update_yaxes(title="Visitors")
+        style(fig, 360).update_yaxes(title="Visitors")
         show(box, fig)
-        box.caption("Bounced = 1 · Casual = 2–4 · Engaged = 5–15 · Power user = 16+")
     with b:
-        box = card("Where visitors come from", f"Unique IPs per country · {lens.lower()}")
+        unknown = focus.loc[focus["country_iso"] == "", "ip"].nunique()
+        box = card("Where visitors come from",
+                   f"Unique IPs per country · {unknown:,} private IPs not located")
         geo = (focus[focus["country_iso"] != ""].groupby("country")["ip"].nunique()
                .rename("visitors").reset_index())
         if geo.empty:
@@ -318,10 +342,8 @@ with tab_aud:
                               hovertemplate="<b>%{hovertext}</b><br>%{z:,} visitors<extra></extra>")
             fig.update_geos(showframe=False, showcoastlines=False, showland=True, landcolor="#F4F2F8",
                             bgcolor="rgba(0,0,0,0)", projection_type="natural earth")
-            style(fig, 340).update_layout(coloraxis_colorbar=dict(thickness=10, title=None, outlinewidth=0))
+            style(fig, 360).update_layout(coloraxis_colorbar=dict(thickness=10, title=None, outlinewidth=0))
             show(box, fig)
-            unknown = focus.loc[focus["country_iso"] == "", "ip"].nunique()
-            box.caption(f"{unknown:,} IPs could not be located (private / internal addresses).")
 
     c, d, e = st.columns(3)
     for col, field, title, color in [(c, "browser", "Browsers", BLUE), (d, "os", "Operating systems", LILAC),
@@ -337,15 +359,15 @@ with tab_err:
     if errs.empty:
         st.success("No errors in this selection. 🌸")
     else:
-        a, b = st.columns([3, 2])
+        a, b = st.columns(2)
         with a:
-            box = card("Top 10 error URLs", "Coloured by status class")
+            box = card("Top 10 error URLs", "Butter = 4xx client error · blush = 5xx server error")
             top_err = (errs.groupby(["url", "status"]).size().reset_index(name="count")
                        .sort_values("count", ascending=False).head(10).sort_values("count"))
-            top_err["label"] = top_err["url"].str.slice(0, 40) + "  ·  " + top_err["status"].astype(str)
+            top_err["label"] = top_err["url"].str.slice(0, 30) + "  ·  " + top_err["status"].astype(str)
             fig = go.Figure(go.Bar(
                 x=top_err["count"], y=top_err["label"], orientation="h",
-                marker=dict(color=[ROSE if s >= 500 else AMBER for s in top_err["status"]], cornerradius=4),
+                marker=dict(color=[ROSE if s >= 500 else AMBER for s in top_err["status"]], **BAR_RADIUS),
                 text=top_err["count"].map("{:,}".format), textposition="outside",
                 textfont=dict(color=INK_SOFT), cliponaxis=False,
                 hovertemplate="<b>%{y}</b><br>%{x:,} occurrences<extra></extra>",
@@ -353,7 +375,6 @@ with tab_err:
             style(fig, 400).update_layout(margin=dict(l=8, r=48, t=8, b=8)).update_xaxes(showticklabels=False)
             fig.update_yaxes(showgrid=False, tickfont=dict(color=INK))
             show(box, fig)
-            box.caption("Amber = 4xx client error · rose = 5xx server error")
         with b:
             box = card("Error codes", "Breakdown of status ≥ 400")
             codes = errs["status"].value_counts().rename_axis("code").reset_index(name="hits")
@@ -365,8 +386,8 @@ with tab_err:
         wk = df.set_index("timestamp")["status"].ge(400).resample("W").agg(["mean", "size"]).reset_index()
         wk.loc[wk["size"] == 0, "mean"] = None  # leave gaps where the site was silent
         fig = go.Figure(go.Scatter(
-            x=wk["timestamp"], y=wk["mean"], mode="lines+markers", line=dict(color=ROSE, width=2),
-            marker=dict(size=6, color=ROSE, line=dict(color="white", width=1.5)), connectgaps=False,
+            x=wk["timestamp"], y=wk["mean"], mode="lines+markers", line=dict(color=LINE_ROSE, width=2),
+            marker=dict(size=6, color=LINE_ROSE, line=dict(color="white", width=1.5)), connectgaps=False,
             customdata=wk["size"], hovertemplate="Week of %{x|%d %b %Y}<br>%{y:.1%} errors · %{customdata:,} requests<extra></extra>",
         ))
         style(fig, 280).update_yaxes(tickformat=".0%")
