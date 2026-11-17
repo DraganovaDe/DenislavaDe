@@ -20,3 +20,15 @@ streamlit run app.py
 Use the sidebar to filter by date range and status class, and to choose the traffic
 lens (human page views, all content pages, or every request).
 Set `WEBLOG_PATH` / `GEOIP_PATH` to use other files.
+
+### Deploy on simonbb (CIS438 app server)
+
+Registered as path `WeblogDraganovaDe`, host `crait10`, port `49153`:
+
+```bash
+git clone -b claude/youthful-rubin-c3jali https://github.com/DraganovaDe/DenislavaDe.git WeblogDraganovaDe
+cd WeblogDraganovaDe
+bash run_simonbb.sh
+```
+
+Then open https://simonbb.com/app/WeblogDraganovaDe/. Stop with `bash run_simonbb.sh stop`.
