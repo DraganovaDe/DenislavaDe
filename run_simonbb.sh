@@ -18,12 +18,15 @@ pkill -f "streamlit run app.py --server.port $PORT" 2>/dev/null || true
 
 # One-time setup: private Python environment with the app's packages
 if [ ! -d .venv ]; then
+  echo "⏳ First run: creating a Python environment…"
   python3 -m venv .venv
 fi
 source .venv/bin/activate
+echo "⏳ Installing packages (first run takes 1–3 minutes)…"
 pip install -q --upgrade pip
 pip install -q -r requirements.txt
 
+echo "⏳ Starting the app…"
 nohup streamlit run app.py \
   --server.port "$PORT" \
   --server.address 0.0.0.0 \
